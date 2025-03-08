@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"> 
+  <link rel="icon" href="https://i.postimg.cc/yYyFgGMr/Untitled-design-2-removebg-preview.png" type="image/png">
+  <title>PickleChat®</title>
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/9.6.1/firebase-app.js";
+    import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/9.6.1/firebase-auth.js";
+    import { getFirestore, collection, addDoc, query, where, getDocs, orderBy, onSnapshot } from "https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore.js";
+
+    const firebaseConfig = { 
+      apiKey: "AIzaSyCv0dJ5om2AyVVsOO2shlfiytsvBBiCpC4",
+      authDomain: "picklechat-e509c.firebaseapp.com",
+      projectId: "picklechat-e509c",
+      storageBucket: "picklechat-e509c.appspot.com",
+      messagingSenderId: "231801689497",
+      appId: "1:231801689497:web:2c8bf07f74d843b10f6f08",
+      measurementId: "G-JY8GEKDRG4"
+    };
+
+    // Inicializáljuk a Firebase-t
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db = getFirestore(app);
+
+    // Globális változó az üzenetek leiratkozásához és az aktuális szoba tárolásához
+    let unsubscribeMessages = null;
+    let currentRoomId = null;
+
+    // Figyeljük a bejelentkezés állapotát
+    onAuthStateChanged(auth, user => {
+      if (user) {
+        document.getElementById("auth").style.display = "none";
+        document.getElementById("roomSection").style.display = "flex";
+      } else {
+        document.getElementById("auth").style.display = "flex";
+        document.getElementById("roomSection").style.display = "none";
+      }
+    });
+
+    // Bejelentkezés
+    window.login = async function() {
+      const email = document.getElementById("email").value;
+      const password = document.getElementById("password").value;
+      try {
+        await signInWithEmailAndPassword(auth, email, password);
+      } catch (error) {
+        alert("Hiba bejelentkezéskor: " + error.message);
+      }
+    }
+
+    // Regisztráció
+    window.signup = async function() {
+      const email = document.getElementById("email").value;
+      const password = document.getElementById("password").value;
+      try {
+        await createUserWithEmailAndPassword(auth, email, password);
+      } catch (error) {
+        alert("Hiba regisztrációkor: " + error.message);
+      }
+    }
+
+    // Teljes kijelentkezés
+    window.logout = function() {
+      signOut(auth);
+    }
+
+    // Szoba létrehozása és automatikus chat csatlakozás
+    window.createRoom = async function() {
+      const roomName = document.getElementById("roomName").value;
+      if (!roomName) {
+        alert("Add meg a szoba nevét! 🏠");
+        return;
+      }
+      // Generálunk egy egyedi kódot a szobához
+      const roomCode = Math.random().toString(36).substring(2, 8).toUpperCase();
+      try {
+        // Létrehozzuk a szobát Firestore-ban
+        const docRef = await addDoc(collection(db, "chatrooms"), { name: roomName, code: roomCode });
+        document.getElementById("roomCode").textContent = `Létrehozva: ${roomCode}`;
+        // Automatikus csatlakozás az új szobához
+        joinChat(docRef.id);
+      } catch (error) {
+        alert("Hiba szoba létrehozáskor: " + error.message);
+      }
+    }
+
+    // Csatlakozás szobához kóddal
+    window.joinRoom = async function() {
+      const joinCode = document.getElementById("joinRoomCode").value.trim().toUpperCase();
+      if (!joinCode) {
+        alert("Add meg a szoba kódját! 📟");
+        return;
+      }
+      // Keresés a "chatrooms" kollekcióban a megadott kóddal
+      const q = query(collection(db, "chatrooms"), where("code", "==", joinCode));
+      try {
+        const querySnapshot = await getDocs(q);
+        if (querySnapshot.empty) {
+          alert("Nem található szoba ezzel a kóddal! 🚫");
+        } else {
+          // Ha több szoba lenne, az elsővel csatlakozunk
+          querySnapshot.forEach(doc => {
+            joinChat(doc.id);
+          });
+        }
+      } catch (error) {
+        alert("Hiba szoba csatlakozáskor: " + error.message);
+      }
+    }
+
+    // Chat szobához csatlakozás (üzenetek figyelése)
+    window.joinChat = function(roomId) {
+      currentRoomId = roomId;
+      const messagesRef = collection(db, "chatrooms", roomId, "messages");
+      const q = query(messagesRef, orderBy("timestamp"));
+      // Ha már volt aktív figyelő, leiratkozunk róla
+      if (unsubscribeMessages) {
+        unsubscribeMessages();
+      }
+      unsubscribeMessages = onSnapshot(q, snapshot => {
+        const messagesList = document.getElementById("messagesList");
+        messagesList.innerHTML = "";
+        snapshot.forEach(doc => {
+          const message = doc.data();
+          messagesList.innerHTML += `<p><strong>${message.user}:</strong> ${message.text}</p>`;
+        });
+      });
+      // UI váltás: megjelenítjük a chat felületet
+      document.getElementById("chatSection").style.display = "flex";
+      document.getElementById("roomOptions").style.display = "none";
+    }
+
+    // Üzenet küldése
+    window.sendMessage = async function() {
+      if (!currentRoomId) {
+        alert("Előbb csatlakozz egy szobához! 🚪");
+        return;
+      }
+      const text = document.getElementById("messageInput").value;
+      if (!text) return;
+      try {
+        await addDoc(collection(db, "chatrooms", currentRoomId, "messages"), {
+          user: auth.currentUser.email,
+          text: text,
+          timestamp: new Date()
+        });
+        document.getElementById("messageInput").value = "";
+      } catch (error) {
+        alert("Hiba üzenet küldésekor: " + error.message);
+      }
+    }
+
+    // Kilépés a chat szobából (üzenetfigyelés leállítása, UI visszaállítása)
+    window.leaveRoom = function() {
+      if (unsubscribeMessages) {
+        unsubscribeMessages();
+        unsubscribeMessages = null;
+      }
+      currentRoomId = null;
+      document.getElementById("messagesList").innerHTML = "";
+      document.getElementById("chatSection").style.display = "none";
+      document.getElementById("roomOptions").style.display = "block";
+      alert("Kiléptél a szobából! ");
+    }
+  </script>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: Arial, sans-serif;
+    }
+    body {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      background: linear-gradient(135deg, #63972f, #066d14);
+      color: white;
+    }
+    .container {
+      background: rgba(255, 255, 255, 0.1);
+      padding: 20px;
+      border-radius: 10px;
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+      width: 90%;
+      max-width: 400px;
+      text-align: center;
+    }
+    h1, h2 {
+      margin-bottom: 20px;
+    }
+    input, button {
+      width: 100%;
+      padding: 10px;
+      margin-top: 10px;
+      border: none;
+      border-radius: 5px;
+    }
+    input {
+      background: white;
+      color: black;
+    }
+    button {
+      background: #ff7eb3;
+      color: white;
+      cursor: pointer;
+      transition: 0.3s;
+    }
+    button:hover {
+      background: #ff5283;
+    }
+    #auth, #roomSection {
+      display: none;
+      flex-direction: column;
+    }
+    /* Szoba opciók stílusok */
+    #roomOptions {
+      display: block;
+      flex-direction: column;
+    }
+    /* Chat UI stílusok */
+    #chatSection {
+      display: none;
+      flex-direction: column;
+      background-color: black;
+    }
+    #messagesList {
+      margin-top: 20px;
+      max-height: 200px;
+      overflow-y: auto;
+      background: rgba(0,0,0,0.2);
+      padding: 10px;
+      border-radius: 5px;
+      text-align: left;
+    }
+    #pickle {
+      width: 100px;
+      height: 100px;
+      margin: 20px auto;
+      size: 10px;
+      animation: spin 4s linear infinite;
+    }
+    @keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>PickleChat®</h1>
+  <img id="pickle" src="https://i.postimg.cc/kXStKpkd/Untitled-design-3-removebg-preview.png" alt="">
+    <!-- Bejelentkezés -->
+    <div id="auth">
+      <h2>Bejelentkezés / Regisztráció</h2>
+      <input type="email" id="email" placeholder="Email">
+      <input type="password" id="password" placeholder="Jelszó">
+      <button onclick="login()">Bejelentkezés</button>
+      <button onclick="signup()">Regisztráció</button>
+    </div>
+    <!-- Szoba létrehozás és csatlakozás -->
+    <div id="roomSection">
+      <div id="roomOptions">
+        <h2>Új szoba létrehozása</h2>
+        <input type="text" id="roomName" placeholder="Szoba neve">
+        <button onclick="createRoom()">Szoba Létrehozása</button>
+        <p id="roomCode"></p>
+        <hr style="margin: 20px 0; border: 1px solid rgba(255,255,255,0.3);">
+        <h2>Csatlakozás szobához</h2>
+        <input type="text" id="joinRoomCode" placeholder="Szoba kódja">
+        <button onclick="joinRoom()">Csatlakozás</button>
+      </div>
+      <!-- Chat ablak -->
+      <div id="chatSection">
+        <h2>Chat</h2>
+        <div id="messagesList">
+          <!-- Üzenetek ide töltődnek -->
+        </div>
+        <input type="text" id="messageInput" placeholder="Írj egy üzenetet...">
+        <button onclick="sendMessage()">Küldés</button>
+        <button onclick="leaveRoom()">Kilépés a szobából</button>
+      </div>
+      <hr style="margin: 20px 0; border: 1px solid rgba(255,255,255,0.3);">
+      <button onclick="logout()">Kijelentkezés</button>
+    </div>
+  </div>
+</body>
+</html>
