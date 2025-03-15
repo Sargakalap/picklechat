@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="hu">
 <head>
+  <script id="Cookiebot" src="https://consent.cookiebot.com/uc.js" data-cbid="911f0854-cb36-4432-a7cb-f7bff6c91b9f" data-blockingmode="auto" type="text/javascript"></script>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0"> 
   <meta name="description" content="PickleChat® - Egy menő chat alkalmazás, ahol beszélgethetsz barátaiddal!">
@@ -11,7 +12,10 @@
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/9.6.1/firebase-app.js";
     import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/9.6.1/firebase-auth.js";
-    import { getFirestore, collection, addDoc, query, where, getDocs, orderBy, onSnapshot } from "https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore.js";
+    import { 
+     getFirestore, collection, addDoc, doc, getDoc, query, where, getDocs, orderBy, onSnapshot 
+     } from "https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore.js";
+
 
     const firebaseConfig = { 
       apiKey: "AIzaSyCv0dJ5om2AyVVsOO2shlfiytsvBBiCpC4",
@@ -119,6 +123,15 @@
       currentRoomId = roomId;
       const messagesRef = collection(db, "chatrooms", roomId, "messages");
       const q = query(messagesRef, orderBy("timestamp"));
+      // Get room information to display name and code
+    const roomDocRef = doc(db, "chatrooms", roomId);
+    getDoc(roomDocRef).then(docSnap => {
+    if (docSnap.exists()) {
+      const roomData = docSnap.data();
+      document.getElementById("roomName").textContent = `Szoba: ${roomData.name}`;
+      document.getElementById("roomCode").textContent = `Kód: ${roomData.code}`;
+    }
+  });
       // Ha már volt aktív figyelő, leiratkozunk róla
       if (unsubscribeMessages) {
         unsubscribeMessages();
@@ -280,6 +293,8 @@
       <!-- Chat ablak -->
       <div id="chatSection">
         <h2>Chat</h2>
+        <p id="roomName"> </p>
+        <p id="roomCode"></p>
         <div id="messagesList">
           <!-- Üzenetek ide töltődnek -->
         </div>
@@ -293,4 +308,3 @@
   </div>
 </body>
 </html>
-
